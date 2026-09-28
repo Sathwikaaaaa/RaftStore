@@ -1,0 +1,8 @@
+id: node1
+address: localhost:5001
+
+peers:
+  - id: node2
+    address: localhost:5002
+  - id: node3
+    address: localhost:5003

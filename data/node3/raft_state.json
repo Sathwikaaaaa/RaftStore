@@ -1,0 +1,39 @@
+{
+  "CurrentTerm": 20,
+  "VotedFor": "node2",
+  "Log": [
+    {
+      "Term": 0,
+      "Command": null
+    },
+    {
+      "Term": 13,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiJUYW5tYWkifQ=="
+    },
+    {
+      "Term": 13,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJwcm9qZWN0IiwidmFsdWUiOiJSYWZ0U3RvcmUifQ=="
+    },
+    {
+      "Term": 13,
+      "Command": "eyJvcGVyYXRpb24iOiJERUxFVEUiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiIifQ=="
+    },
+    {
+      "Term": 14,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJhZnRlcl9yZXN0YXJ0IiwidmFsdWUiOiJzdWNjZXNzIn0="
+    },
+    {
+      "Term": 17,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiJUYW5tYWkifQ=="
+    },
+    {
+      "Term": 17,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJhcmNoaXRlY3R1cmUiLCJ2YWx1ZSI6IlJhZnQtS2V5VmFsdWUtU2VwYXJhdGlvbi1WYWx1ZUxvZy1Sb2Nrc0RCIn0="
+    },
+    {
+      "Term": 17,
+      "Command": "eyJvcGVyYXRpb24iOiJERUxFVEUiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiIifQ=="
+    }
+  ],
+  "CommitIndex": 7
+}

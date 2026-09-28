@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package raftstore;
+
+option go_package = "raftstore/proto";
+
+service RaftService {
+    rpc RequestVote(RequestVoteRequest)
+        returns (RequestVoteResponse);
+
+    rpc AppendEntries(AppendEntriesRequest)
+        returns (AppendEntriesResponse);
+
+    rpc Put(PutRequest)
+        returns (PutResponse);
+
+    rpc Get(GetRequest)
+        returns (GetResponse);
+
+    rpc Delete(DeleteRequest)
+        returns (DeleteResponse);
+}
+
+message RequestVoteRequest {
+    uint64 term = 1;
+    string candidate_id = 2;
+    uint64 last_log_index = 3;
+    uint64 last_log_term = 4;
+}
+
+message RequestVoteResponse {
+    uint64 term = 1;
+    bool vote_granted = 2;
+}
+
+message AppendEntriesRequest {
+    uint64 term = 1;
+    string leader_id = 2;
+
+    uint64 prev_log_index = 3;
+    uint64 prev_log_term = 4;
+
+    repeated LogEntry entries = 5;
+
+    uint64 leader_commit = 6;
+}
+
+message AppendEntriesResponse {
+    uint64 term = 1;
+    bool success = 2;
+
+    // Helps the leader move nextIndex backward efficiently.
+    uint64 conflict_index = 3;
+}
+
+message LogEntry {
+    uint64 term = 1;
+    bytes command = 2;
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+}
+
+message PutResponse {
+    bool success = 1;
+    string leader_id = 2;
+    string message = 3;
+}
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    bool found = 1;
+    string value = 2;
+    string leader_id = 3;
+    string message = 4;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    string leader_id = 2;
+    string message = 3;
+}
