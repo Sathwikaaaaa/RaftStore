@@ -8,6 +8,22 @@ const (
 	Leader
 )
 
+func (s State) String() string {
+	switch s {
+	case Follower:
+		return "Follower"
+
+	case Candidate:
+		return "Candidate"
+
+	case Leader:
+		return "Leader"
+
+	default:
+		return "Unknown"
+	}
+}
+
 type LogEntry struct {
 	Term    uint64
 	Command []byte

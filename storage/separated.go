@@ -38,15 +38,26 @@ func NewSeparatedKVStore(dataDir string) (*SeparatedKVStore, error) {
 		)
 	}
 
-	rocksDBPath := filepath.Join(
-		dataDir,
-		"rocksdb",
-	)
+	// Check whether a previous GC operation was interrupted.
+	manifest, err := readGCManifest(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"read GC manifest during startup: %w",
+			err,
+		)
+	}
 
-	valueLogPath := filepath.Join(
-		dataDir,
-		"values.log",
-	)
+	if manifest.State != GCStateIdle {
+		if err := recoverGC(dataDir, manifest); err != nil {
+			return nil, fmt.Errorf(
+				"recover interrupted GC: %w",
+				err,
+			)
+		}
+	}
+
+	rocksDBPath := filepath.Join(dataDir, "rocksdb")
+	valueLogPath := filepath.Join(dataDir, "values.log")
 
 	db, err := NewKVStore(rocksDBPath)
 	if err != nil {

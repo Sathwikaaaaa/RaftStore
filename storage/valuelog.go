@@ -16,7 +16,8 @@ const valueLogHeaderSize = 8
 //
 //	[8 bytes value length][value bytes]
 //
-// The returned offset points to the beginning of the value bytes.
+// The ValuePointer returned by Append points to the beginning
+// of the value bytes, not the record header.
 type ValueLog struct {
 	mu sync.RWMutex
 
@@ -24,6 +25,14 @@ type ValueLog struct {
 	path string
 
 	nextOffset uint64
+}
+
+// ValueLogRecord describes one record physically stored
+// in the ValueLog.
+type ValueLogRecord struct {
+	RecordOffset uint64
+	ValueOffset  uint64
+	Length       uint64
 }
 
 // NewValueLog opens or creates a ValueLog.
@@ -151,6 +160,110 @@ func (v *ValueLog) Read(
 	return value, nil
 }
 
+// Scan returns all valid records currently stored in the ValueLog.
+//
+// This does not modify the file.
+func (v *ValueLog) Scan() ([]ValueLogRecord, error) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	if v.file == nil {
+		return nil, fmt.Errorf(
+			"value log is closed",
+		)
+	}
+
+	info, err := v.file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"stat value log during scan: %w",
+			err,
+		)
+	}
+
+	fileSize := uint64(info.Size())
+
+	var records []ValueLogRecord
+
+	offset := uint64(0)
+
+	for offset < fileSize {
+		// A complete record must at least contain
+		// the 8-byte length header.
+		if fileSize-offset < valueLogHeaderSize {
+			return nil, fmt.Errorf(
+				"truncated value log header at offset %d",
+				offset,
+			)
+		}
+
+		header := make([]byte, valueLogHeaderSize)
+
+		n, err := v.file.ReadAt(
+			header,
+			int64(offset),
+		)
+
+		if err != nil && err != io.EOF {
+			return nil, fmt.Errorf(
+				"read value log header at offset %d: %w",
+				offset,
+				err,
+			)
+		}
+
+		if n != valueLogHeaderSize {
+			return nil, fmt.Errorf(
+				"incomplete value log header at offset %d",
+				offset,
+			)
+		}
+
+		length := binary.LittleEndian.Uint64(header)
+
+		valueOffset := offset + valueLogHeaderSize
+
+		// Check for overflow.
+		if length > ^uint64(0)-valueOffset {
+			return nil, fmt.Errorf(
+				"invalid value length at offset %d",
+				offset,
+			)
+		}
+
+		nextOffset := valueOffset + length
+
+		// Record extends beyond the file.
+		if nextOffset > fileSize {
+			return nil, fmt.Errorf(
+				"truncated value log record at offset %d",
+				offset,
+			)
+		}
+
+		records = append(
+			records,
+			ValueLogRecord{
+				RecordOffset: offset,
+				ValueOffset:  valueOffset,
+				Length:       length,
+			},
+		)
+
+		offset = nextOffset
+	}
+
+	return records, nil
+}
+
+// Size returns the current ValueLog size.
+func (v *ValueLog) Size() uint64 {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	return v.nextOffset
+}
+
 // Sync flushes the ValueLog to disk.
 func (v *ValueLog) Sync() error {
 	v.mu.RLock()
@@ -170,14 +283,6 @@ func (v *ValueLog) Sync() error {
 	}
 
 	return nil
-}
-
-// Size returns the current ValueLog size.
-func (v *ValueLog) Size() uint64 {
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-
-	return v.nextOffset
 }
 
 // Close flushes and closes the ValueLog.

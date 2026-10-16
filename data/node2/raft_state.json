@@ -1,5 +1,5 @@
 {
-  "CurrentTerm": 20,
+  "CurrentTerm": 34,
   "VotedFor": "node2",
   "Log": [
     {
@@ -33,7 +33,39 @@
     {
       "Term": 17,
       "Command": "eyJvcGVyYXRpb24iOiJERUxFVEUiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiIifQ=="
+    },
+    {
+      "Term": 25,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiJUYW5tYWkifQ=="
+    },
+    {
+      "Term": 25,
+      "Command": "eyJvcGVyYXRpb24iOiJERUxFVEUiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiIifQ=="
+    },
+    {
+      "Term": 25,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiJUYW5tYWkifQ=="
+    },
+    {
+      "Term": 25,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJuYW1lIiwidmFsdWUiOiJTYXRod2lrYSJ9"
+    },
+    {
+      "Term": 26,
+      "Command": "eyJvcGVyYXRpb24iOiJERUxFVEUiLCJrZXkiOiJhcmNoaXRlY3R1cmUiLCJ2YWx1ZSI6IiJ9"
+    },
+    {
+      "Term": 26,
+      "Command": "eyJvcGVyYXRpb24iOiJERUxFVEUiLCJrZXkiOiJhcmNoaXRlY3R1cmUiLCJ2YWx1ZSI6IiJ9"
+    },
+    {
+      "Term": 30,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJ0ZXN0MSIsInZhbHVlIjoiaGVsbG8ifQ=="
+    },
+    {
+      "Term": 30,
+      "Command": "eyJvcGVyYXRpb24iOiJQVVQiLCJrZXkiOiJ0ZXN0MiIsInZhbHVlIjoid29ybGQifQ=="
     }
   ],
-  "CommitIndex": 7
+  "CommitIndex": 15
 }

@@ -182,3 +182,67 @@ func (s *KVStore) Delete(key string) error {
 
 	return nil
 }
+
+// ScanAll returns every key-value entry currently stored in RocksDB.
+//
+// The returned values are the raw metadata bytes stored by KVStore.
+// For SeparatedKVStore these bytes represent ValuePointer values.
+func (s *KVStore) ScanAll() (map[string]string, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("storage is closed")
+	}
+
+	readOptions := C.rocksdb_readoptions_create()
+	defer C.rocksdb_readoptions_destroy(readOptions)
+
+	iter := C.rocksdb_create_iterator(
+		s.db,
+		readOptions,
+	)
+	defer C.rocksdb_iter_destroy(iter)
+
+	result := make(map[string]string)
+
+	C.rocksdb_iter_seek_to_first(iter)
+
+	for C.rocksdb_iter_valid(iter) != 0 {
+		var keyLength C.size_t
+		var valueLength C.size_t
+
+		keyPtr := C.rocksdb_iter_key(
+			iter,
+			&keyLength,
+		)
+
+		valuePtr := C.rocksdb_iter_value(
+			iter,
+			&valueLength,
+		)
+
+		if keyPtr != nil {
+			key := string(
+				C.GoBytes(
+					unsafe.Pointer(keyPtr),
+					C.int(keyLength),
+				),
+			)
+
+			value := ""
+
+			if valuePtr != nil {
+				value = string(
+					C.GoBytes(
+						unsafe.Pointer(valuePtr),
+						C.int(valueLength),
+					),
+				)
+			}
+
+			result[key] = value
+		}
+
+		C.rocksdb_iter_next(iter)
+	}
+
+	return result, nil
+}

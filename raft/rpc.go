@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"fmt"
+	"time"
 
 	pb "raftstore/proto"
 )
@@ -41,15 +42,12 @@ func (n *Node) RequestVote(
 		}
 	}
 
-	lastLogIndex := uint64(
-		len(n.Log) - 1,
-	)
+	lastLogIndex := uint64(len(n.Log) - 1)
 
 	var lastLogTerm uint64
 
 	if lastLogIndex > 0 {
-		lastLogTerm =
-			n.Log[lastLogIndex].Term
+		lastLogTerm = n.Log[lastLogIndex].Term
 	}
 
 	// Candidate log must be at least as up-to-date
@@ -140,6 +138,11 @@ func (n *Node) AppendEntries(
 
 	n.LeaderID = req.LeaderId
 
+	// Record the time of the most recent valid leader
+	// communication. This is used by the metrics layer
+	// to measure heartbeat/follower activity.
+	n.LastHeartbeat = time.Now()
+
 	// Reset election timer immediately.
 	select {
 
@@ -167,8 +170,7 @@ func (n *Node) AppendEntries(
 	}
 
 	// Check previous log term.
-	if n.Log[req.PrevLogIndex].Term !=
-		req.PrevLogTerm {
+	if n.Log[req.PrevLogIndex].Term != req.PrevLogTerm {
 
 		conflictTerm :=
 			n.Log[req.PrevLogIndex].Term
@@ -209,6 +211,7 @@ func (n *Node) AppendEntries(
 				// entry. This condition should not normally
 				// occur in a correct Raft cluster.
 				if index <= n.CommitIndex {
+
 					return &pb.AppendEntriesResponse{
 						Term:          n.CurrentTerm,
 						Success:       false,
@@ -324,12 +327,14 @@ func (n *Node) applyCommittedEntriesLocked() {
 				command.Key,
 				command.Value,
 			); err != nil {
+
 				fmt.Printf(
 					"Node %s failed to apply PUT at log index %d: %v\n",
 					n.ID,
 					n.LastApplied,
 					err,
 				)
+
 				continue
 			}
 
@@ -345,12 +350,14 @@ func (n *Node) applyCommittedEntriesLocked() {
 			if err := n.KV.Delete(
 				command.Key,
 			); err != nil {
+
 				fmt.Printf(
 					"Node %s failed to apply DELETE at log index %d: %v\n",
 					n.ID,
 					n.LastApplied,
-					err,
+					command.Key,
 				)
+
 				continue
 			}
 
