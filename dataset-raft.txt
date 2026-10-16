@@ -1,0 +1,12 @@
+dataset-raft
+go run .\cmd\client -address localhost:5001 -op put -key name -value Tanmai
+go run .\cmd\client -address localhost:5001 -op get -key name
+
+go run .\cmd\client -address localhost:5001 -op put -key project -value RaftStore
+go run .\cmd\client -address localhost:5001 -op get -key project
+
+
+go run .\cmd\client -address localhost:5001 -op put -key architecture -value Raft-KeyValue-Separation-ValueLog-RocksDB
+go run .\cmd\client -address localhost:5001 -op get -key architecture
+
+go run .\cmd\client -address localhost:5003 -op delete -key architecture
