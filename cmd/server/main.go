@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -18,7 +19,9 @@ import (
 func main() {
 
 	if len(os.Args) < 3 || os.Args[1] != "-id" {
-		log.Fatal("Usage: go run .\\cmd\\server -id node1|node2|node3")
+		log.Fatal(
+			"Usage: go run .\\cmd\\server -id node1|node2|node3",
+		)
 	}
 
 	nodeID := os.Args[2]
@@ -44,6 +47,7 @@ func main() {
 	nodePeers := make(map[string]string)
 
 	for id, addr := range peers {
+
 		if id != nodeID {
 			nodePeers[id] = addr
 		}
@@ -55,7 +59,10 @@ func main() {
 		nodePeers,
 	)
 
-	// Start gRPC server.
+	// ------------------------------------------------------------
+	// gRPC SERVER
+	// ------------------------------------------------------------
+
 	listener, err := net.Listen(
 		"tcp",
 		address,
@@ -71,6 +78,10 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 
+	// Create ONE API server instance.
+
+	// This is important because the API server owns the
+	// latency, throughput, Raft metrics, and snapshot collectors.
 	raftServer := api.NewRaftServer(node)
 
 	pb.RegisterRaftServiceServer(
@@ -79,15 +90,16 @@ func main() {
 	)
 
 	log.Printf(
-		"Node %s running on %s",
+		"Node %s running on gRPC %s",
 		nodeID,
 		address,
 	)
 
-	// Start accepting RPCs.
+	// Start accepting gRPC requests.
 	go func() {
 
 		if err := grpcServer.Serve(listener); err != nil {
+
 			log.Fatalf(
 				"Node %s gRPC server stopped: %v",
 				nodeID,
@@ -97,7 +109,49 @@ func main() {
 
 	}()
 
-	// Connect to peers.
+	// ------------------------------------------------------------
+	// HTTP METRICS SERVER
+	// ------------------------------------------------------------
+
+	metricsAddress :=
+		"localhost:" + metricsPort(nodeID)
+
+	metricsHandler :=
+		api.MetricsHandlerFromServer(
+			raftServer,
+		)
+
+	httpServer := &http.Server{
+		Addr:    metricsAddress,
+		Handler: metricsHandler,
+	}
+
+	log.Printf(
+		"Node %s metrics server running on http://%s/metrics",
+		nodeID,
+		metricsAddress,
+	)
+
+	go func() {
+
+		err := httpServer.ListenAndServe()
+
+		if err != nil &&
+			err != http.ErrServerClosed {
+
+			log.Printf(
+				"Node %s metrics server stopped: %v",
+				nodeID,
+				err,
+			)
+		}
+
+	}()
+
+	// ------------------------------------------------------------
+	// PEER CONNECTIONS
+	// ------------------------------------------------------------
+
 	for peerID, peerAddress := range nodePeers {
 
 		go connectToPeer(
@@ -107,11 +161,35 @@ func main() {
 		)
 	}
 
-	// Start the election timer.
+	// ------------------------------------------------------------
+	// ELECTION TIMER
+	// ------------------------------------------------------------
+
 	go node.StartElectionTimer()
 
-	// Keep the server alive.
+	// ------------------------------------------------------------
+	// KEEP SERVER ALIVE
+	// ------------------------------------------------------------
+
 	select {}
+}
+
+func metricsPort(nodeID string) string {
+
+	switch nodeID {
+
+	case "node1":
+		return "6001"
+
+	case "node2":
+		return "6002"
+
+	case "node3":
+		return "6003"
+
+	default:
+		return "6099"
+	}
 }
 
 func connectToPeer(
@@ -148,7 +226,9 @@ func connectToPeer(
 				err,
 			)
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(
+				1 * time.Second,
+			)
 
 			continue
 		}
