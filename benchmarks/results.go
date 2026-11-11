@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,17 +12,35 @@ import (
 )
 
 type LatencyStats struct {
-	TotalOperations   int
-	SuccessfulOps     int
-	FailedOps         int
-	TotalDuration     time.Duration
-	ThroughputOpsSec  float64
-	AvgLatencyMs      float64
-	P50LatencyMs      float64
-	P95LatencyMs      float64
-	P99LatencyMs      float64
-	MinLatencyMs      float64
-	MaxLatencyMs      float64
+	TotalOperations  int
+	SuccessfulOps    int
+	FailedOps        int
+	TotalDuration    time.Duration
+	ThroughputOpsSec float64
+	AvgLatencyMs     float64
+	P50LatencyMs     float64
+	P95LatencyMs     float64
+	P99LatencyMs     float64
+	MinLatencyMs     float64
+	MaxLatencyMs     float64
+}
+
+// ServerMetricsSnapshot models the JSON response from the server's /metrics HTTP endpoint.
+type ServerMetricsSnapshot struct {
+	NodeID string `json:"NodeID"`
+	Raft   struct {
+		State            string            `json:"State"`
+		MaxBatchSize     int               `json:"MaxBatchSize"`
+		MaxPipelineDepth int               `json:"MaxPipelineDepth"`
+		FollowerLag      map[string]uint64 `json:"FollowerLag"`
+		LeaderChanges    uint64            `json:"LeaderChanges"`
+	} `json:"Raft"`
+	Storage struct {
+		WriteAmplification   float64 `json:"WriteAmplification"`
+		StorageOverheadRatio float64 `json:"StorageOverheadRatio"`
+		LogicalBytes         uint64  `json:"LogicalBytes"`
+		TotalPhysicalBytes   uint64  `json:"TotalPhysicalBytes"`
+	} `json:"Storage"`
 }
 
 func CalculateStats(latencies []time.Duration, failed int, duration time.Duration) LatencyStats {
@@ -40,7 +60,6 @@ func CalculateStats(latencies []time.Duration, failed int, duration time.Duratio
 		return stats
 	}
 
-	// Convert to float64 milliseconds and sort
 	msLatencies := make([]float64, success)
 	var sum float64
 	min := float64(latencies[0].Milliseconds())
@@ -70,14 +89,30 @@ func CalculateStats(latencies []time.Duration, failed int, duration time.Duratio
 	return stats
 }
 
-func SaveResultsToCSV(filename string, stats LatencyStats, config WorkloadConfig) error {
+func FetchServerMetrics(url string) (ServerMetricsSnapshot, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return ServerMetricsSnapshot{}, err
+	}
+	defer resp.Body.Close()
+
+	var snapshot ServerMetricsSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
+		return ServerMetricsSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func SaveResultsToCSV(filename string, stats LatencyStats, config WorkloadConfig, serverData ServerMetricsSnapshot) error {
 	resultsDir := "results"
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		return err
 	}
 
 	filePath := filepath.Join(resultsDir, filename)
-	file, err := os.Create(filePath)
+	
+	// Open file in append mode or create if it doesn't exist
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -86,14 +121,17 @@ func SaveResultsToCSV(filename string, stats LatencyStats, config WorkloadConfig
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Write Header
-	writer.Write([]string{
-		"timestamp", "workload_type", "total_ops", "successful_ops", "failed_ops",
-		"duration_sec", "throughput_ops_sec", "avg_latency_ms", "p50_latency_ms",
-		"p95_latency_ms", "p99_latency_ms", "min_latency_ms", "max_latency_ms",
-	})
+	// Check if file is empty to write header
+	stat, _ := file.Stat()
+	if stat.Size() == 0 {
+		writer.Write([]string{
+			"timestamp", "workload_type", "total_ops", "successful_ops", "failed_ops",
+			"duration_sec", "throughput_ops_sec", "avg_latency_ms", "p50_latency_ms",
+			"p95_latency_ms", "p99_latency_ms", "min_latency_ms", "max_latency_ms",
+			"max_batch_size", "max_pipeline_depth", "write_amplification", "storage_overhead_ratio", "leader_changes",
+		})
+	}
 
-	// Write Data Row
 	writer.Write([]string{
 		time.Now().Format(time.RFC3339),
 		config.WorkloadType,
@@ -108,8 +146,13 @@ func SaveResultsToCSV(filename string, stats LatencyStats, config WorkloadConfig
 		fmt.Sprintf("%.2f", stats.P99LatencyMs),
 		fmt.Sprintf("%.2f", stats.MinLatencyMs),
 		fmt.Sprintf("%.2f", stats.MaxLatencyMs),
+		fmt.Sprintf("%d", serverData.Raft.MaxBatchSize),
+		fmt.Sprintf("%d", serverData.Raft.MaxPipelineDepth),
+		fmt.Sprintf("%.4f", serverData.Storage.WriteAmplification),
+		fmt.Sprintf("%.4f", serverData.Storage.StorageOverheadRatio),
+		fmt.Sprintf("%d", serverData.Raft.LeaderChanges),
 	})
 
-	fmt.Printf("\n[Benchmark] Results successfully saved to %s\n", filePath)
+	fmt.Printf("\n[Benchmark] Results successfully appended to %s\n", filePath)
 	return nil
 }
