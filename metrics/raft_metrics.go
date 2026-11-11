@@ -23,6 +23,10 @@ type RaftMetrics struct {
 	FollowerLag map[string]uint64
 
 	LastHeartbeat time.Time
+
+	// Exported performance parameters for ML tracking
+	MaxBatchSize     int
+	MaxPipelineDepth int
 }
 
 // RaftMetricsTracker tracks Raft-level measurements.
@@ -128,5 +132,8 @@ func (t *RaftMetricsTracker) Snapshot(
 		FollowerLag: followerLag,
 
 		LastHeartbeat: node.LastHeartbeat,
+		
+		MaxBatchSize:     node.RepConfig.MaxBatchSize,
+		MaxPipelineDepth: node.RepConfig.MaxPipelineDepth,
 	}
 }

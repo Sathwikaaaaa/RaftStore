@@ -11,6 +11,25 @@ import (
 	"raftstore/storage"
 )
 
+// ReplicationConfig defines performance parameters for Raft log replication.
+type ReplicationConfig struct {
+	// MaxBatchSize is the maximum number of log entries sent in a single AppendEntries RPC.
+	// If 0, defaults to 100.
+	MaxBatchSize int
+
+	// MaxPipelineDepth is the number of concurrent in-flight AppendEntries requests per follower.
+	// If 0, defaults to 1 (strict sequential).
+	MaxPipelineDepth int
+}
+
+// DefaultReplicationConfig returns the standard safe defaults.
+func DefaultReplicationConfig() ReplicationConfig {
+	return ReplicationConfig{
+		MaxBatchSize:     100,
+		MaxPipelineDepth: 1,
+	}
+}
+
 type Node struct {
 	Mu sync.Mutex
 
@@ -45,11 +64,26 @@ type Node struct {
 	// ValueLog:
 	//     actual value bytes
 	KV *storage.SeparatedKVStore
+
+	// Performance tuning
+	RepConfig ReplicationConfig
 }
 
 // NewNode creates a new Raft node.
-func NewNode(id string, peers map[string]string) *Node {
+func NewNode(id string, peers map[string]string, configs ...ReplicationConfig) *Node {
 	nodeDataDir := filepath.Join("data", id)
+
+	cfg := DefaultReplicationConfig()
+	if len(configs) > 0 {
+		cfg = configs[0]
+		// enforce safe minimums
+		if cfg.MaxBatchSize <= 0 {
+			cfg.MaxBatchSize = 100
+		}
+		if cfg.MaxPipelineDepth <= 0 {
+			cfg.MaxPipelineDepth = 1
+		}
+	}
 
 	// Create the node data directory.
 	if err := os.MkdirAll(nodeDataDir, 0755); err != nil {
@@ -108,6 +142,7 @@ func NewNode(id string, peers map[string]string) *Node {
 		LeaderID:      "",
 
 		KV: kv,
+		RepConfig: cfg,
 	}
 
 	// Restore persistent Raft state.

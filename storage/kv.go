@@ -1,8 +1,9 @@
 package storage
 
 /*
-#cgo CFLAGS: -IC:/vcpkg/installed/x64-windows/include
-#cgo LDFLAGS: -LC:/vcpkg/installed/x64-windows/lib -lrocksdb -lrpcrt4 -lshlwapi -LC:/vcpkg/packages/zlib_x64-windows/lib -lz
+#cgo windows CFLAGS: -IC:/vcpkg/installed/x64-windows/include
+#cgo windows LDFLAGS: -LC:/vcpkg/installed/x64-windows/lib -lrocksdb -lrpcrt4 -lshlwapi -LC:/vcpkg/packages/zlib_x64-windows/lib -lz
+#cgo linux LDFLAGS: -lrocksdb
 
 #include <stdlib.h>
 #include "rocksdb/c.h"
