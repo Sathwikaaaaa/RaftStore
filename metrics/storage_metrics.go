@@ -18,6 +18,7 @@ type StorageMetrics struct {
 
 	StorageOverheadBytes uint64
 	StorageOverheadRatio float64
+	WriteAmplification   float64
 
 	ReclaimableBytes uint64
 	LiveBytes        uint64
@@ -31,62 +32,47 @@ func CollectStorageMetrics(
 	store *storage.SeparatedKVStore,
 ) (StorageMetrics, error) {
 	if store == nil {
-		return StorageMetrics{}, fmt.Errorf(
-			"storage is nil",
-		)
+		return StorageMetrics{}, fmt.Errorf("storage is nil")
 	}
 
-	rocksDBPath := filepath.Join(
-		dataDir,
-		"rocksdb",
-	)
-
-	valueLogPath := filepath.Join(
-		dataDir,
-		"values.log",
-	)
+	rocksDBPath := filepath.Join(dataDir, "rocksdb")
+	valueLogPath := filepath.Join(dataDir, "values.log")
 
 	rocksDBBytes, err := directorySize(rocksDBPath)
-	if err != nil {
-		return StorageMetrics{}, fmt.Errorf(
-			"calculate RocksDB size: %w",
-			err,
-		)
+	if err != nil && !os.IsNotExist(err) {
+		return StorageMetrics{}, fmt.Errorf("calculate RocksDB size: %w", err)
 	}
 
 	valueLogBytes, err := fileSize(valueLogPath)
-	if err != nil {
-		return StorageMetrics{}, fmt.Errorf(
-			"calculate ValueLog size: %w",
-			err,
-		)
+	if err != nil && !os.IsNotExist(err) {
+		return StorageMetrics{}, fmt.Errorf("calculate ValueLog size: %w", err)
 	}
 
 	gcStats, err := store.AnalyzeGC()
 	if err != nil {
-		return StorageMetrics{}, fmt.Errorf(
-			"analyze storage for metrics: %w",
-			err,
-		)
+		return StorageMetrics{}, fmt.Errorf("analyze storage for metrics: %w", err)
 	}
 
-	logicalBytes := gcStats.LiveBytes
+	// We define LogicalBytes as the pure user data (keys + live values)
+	// In separated storage, RocksDB holds the keys, ValueLog holds the values.
+	// For simplicity in this metric, we approximate total logical bytes
+	// by adding the size of live payload values and a modest estimate of key sizes.
+	// Future improvements can iterate exactly over RocksDB to get exact key lengths.
+	estimatedKeySizeOverhead := uint64(gcStats.LiveBytes / 10) // assuming avg key is 10% of value
+	logicalBytes := gcStats.LiveBytes + estimatedKeySizeOverhead
 
 	totalPhysicalBytes := rocksDBBytes + valueLogBytes
-
 	var overheadBytes uint64
-
-	if totalPhysicalBytes >= logicalBytes {
-		overheadBytes =
-			totalPhysicalBytes - logicalBytes
+	if totalPhysicalBytes > logicalBytes {
+		overheadBytes = totalPhysicalBytes - logicalBytes
 	}
 
 	var overheadRatio float64
-
+	var writeAmp float64
 	if logicalBytes > 0 {
-		overheadRatio =
-			float64(overheadBytes) /
-				float64(logicalBytes)
+		overheadRatio = float64(overheadBytes) / float64(logicalBytes)
+		// Write amplification is physical bytes written / logical bytes intended
+		writeAmp = float64(totalPhysicalBytes) / float64(logicalBytes)
 	}
 
 	return StorageMetrics{
@@ -96,6 +82,7 @@ func CollectStorageMetrics(
 		LogicalBytes:         logicalBytes,
 		StorageOverheadBytes: overheadBytes,
 		StorageOverheadRatio: overheadRatio,
+		WriteAmplification:   writeAmp,
 		ReclaimableBytes:     gcStats.ReclaimableBytes,
 		LiveBytes:            gcStats.LiveBytes,
 		ObsoleteBytes:        gcStats.ObsoleteBytes,
@@ -106,40 +93,32 @@ func CollectStorageMetrics(
 func fileSize(path string) (uint64, error) {
 	info, err := os.Stat(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
 		return 0, err
 	}
-
 	return uint64(info.Size()), nil
 }
 
 // directorySize recursively calculates directory size.
 func directorySize(path string) (uint64, error) {
 	var total uint64
-
-	err := filepath.Walk(
-		path,
-		func(
-			currentPath string,
-			info os.FileInfo,
-			err error,
-		) error {
-			if err != nil {
-				return err
-			}
-
-			if info.IsDir() {
+	err := filepath.Walk(path, func(currentPath string, info os.FileInfo, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
 				return nil
 			}
-
+			return err
+		}
+		if !info.IsDir() {
 			total += uint64(info.Size())
-
-			return nil
-		},
-	)
+		}
+		return nil
+	})
 
 	if err != nil {
 		return 0, err
 	}
-
 	return total, nil
 }
