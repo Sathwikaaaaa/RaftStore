@@ -79,13 +79,34 @@ func main() {
 		}
 	}()
 
-	// HTTP METRICS SERVER
+	// HTTP METRICS & DASHBOARD SERVER
 	metricsAddress := "localhost:" + metricsPort(nodeID)
+	
+	// Create a standard HTTP multiplexer to handle multiple routes
+	mux := http.NewServeMux()
+	
+	// Mount existing Prometheus metrics
 	metricsHandler := api.MetricsHandlerFromServer(raftServer)
+	mux.Handle("/metrics", metricsHandler)
+
+	// Mount new React Dashboard API endpoints
+	dashAPI := api.NewDashboardAPI(node)
+	mux.HandleFunc("/api/status", dashAPI.StatusHandler)
+	mux.HandleFunc("/api/fault", dashAPI.FaultHandler)
+	
 	httpServer := &http.Server{
 		Addr:    metricsAddress,
-		Handler: metricsHandler,
+		Handler: mux,
 	}
+
+	log.Printf("Node %s HTTP API running on http://%s", nodeID, metricsAddress)
+
+	go func() {
+		err := httpServer.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("Node %s HTTP server stopped: %v", nodeID, err)
+		}
+	}()
 
 	log.Printf("Node %s metrics server running on http://%s/metrics", nodeID, metricsAddress)
 
