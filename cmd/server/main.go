@@ -93,6 +93,7 @@ func main() {
 	dashAPI := api.NewDashboardAPI(node)
 	mux.HandleFunc("/api/status", dashAPI.StatusHandler)
 	mux.HandleFunc("/api/fault", dashAPI.FaultHandler)
+	mux.HandleFunc("/api/kv", dashAPI.KvHandler) 
 	
 	httpServer := &http.Server{
 		Addr:    metricsAddress,

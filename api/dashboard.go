@@ -94,3 +94,55 @@ func (api *DashboardAPI) FaultHandler(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
+
+// POST /api/kv - Handles Key-Value operations directed at the cluster
+func (api *DashboardAPI) KvHandler(w http.ResponseWriter, r *http.Request) {
+	api.enableCORS(&w)
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	start := time.Now()
+	var req struct {
+		Op    string `json:"op"`
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	api.node.Mu.Lock()
+	isLeader := (api.node.State == raft.Leader)
+	leaderID := api.node.ID
+	logIndex := len(api.node.Log)
+	api.node.Mu.Unlock()
+
+	if !isLeader {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Node is not the leader. Redirecting...",
+			"node":    leaderID,
+		})
+		return
+	}
+
+	// NOTE: In your production build, you will pass req.Op, req.Key, req.Value 
+	// into your actual Raft state machine here (e.g., api.node.Propose(...)).
+	// For the dashboard UI wire-up, we are simulating the consensus delay.
+	time.Sleep(12 * time.Millisecond)
+
+	latency := time.Since(start).Milliseconds()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"op":         req.Op,
+		"key":        req.Key,
+		"value":      req.Value,
+		"node":       leaderID,
+		"log_index":  logIndex + 1,
+		"latency_ms": latency,
+	})
+}

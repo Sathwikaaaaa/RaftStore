@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { 
   Database, Activity, Zap, FileText, LayoutDashboard, 
-  Settings, Clock, CheckCircle, Server, Crown, AlertTriangle, ShieldCheck
+  Settings, Clock, CheckCircle, Server, Crown, AlertTriangle, ShieldCheck, BarChart2 
 } from 'lucide-react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
+} from 'recharts';
 
 interface NodeStatus {
   node_id: string;
@@ -23,6 +26,70 @@ const DEFAULT_NODES: NodeStatus[] = [
 function App() {
   const [time, setTime] = useState(new Date().toLocaleTimeString());
   const [nodes, setNodes] = useState<NodeStatus[]>(DEFAULT_NODES);
+  const [chartData, setChartData] = useState<any[]>([]);
+  // KV Operations State
+  const [kvOp, setKvOp] = useState<'PUT' | 'GET' | 'DELETE'>('PUT');
+  const [kvKey, setKvKey] = useState('');
+  const [kvValue, setKvValue] = useState('');
+  const [kvResult, setKvResult] = useState<any>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+  // Fault Injection State
+  const [faultEvents, setFaultEvents] = useState<{time: string, event: string, node: string, status: string}[]>([]);
+  const [isInjecting, setIsInjecting] = useState(false);
+
+  // Fault Execute Handler
+  const handleInjectFault = async (action: string, actionName: string, targetNode: string) => {
+    setIsInjecting(true);
+    
+    // Log the event in the UI table immediately
+    const newEvent = {
+      time: new Date().toLocaleTimeString(),
+      event: actionName,
+      node: targetNode.toUpperCase(),
+      status: 'Injected'
+    };
+    setFaultEvents(prev => [newEvent, ...prev].slice(0, 5)); // Keep the latest 5 events
+
+    const portMatch = targetNode.match(/\d+/);
+    const port = portMatch ? 6000 + parseInt(portMatch[0]) : 6001;
+
+    try {
+      await fetch(`http://localhost:${port}/api/fault`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+    } catch (err) {
+      console.error("Fault injection failed:", err);
+    }
+    
+    setIsInjecting(false);
+  };
+  // KV Execute Handler
+  const handleExecuteKV = async () => {
+    const leader = nodes.find(n => n.state === 'Leader');
+    if (!leader) {
+      setKvResult({ success: false, error: 'No active leader available.' });
+      return;
+    }
+    
+    setIsExecuting(true);
+    const portMatch = leader.node_id.match(/\d+/);
+    const port = portMatch ? 6000 + parseInt(portMatch[0]) : 6001;
+
+    try {
+      const res = await fetch(`http://localhost:${port}/api/kv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: kvOp, key: kvKey, value: kvValue })
+      });
+      const data = await res.json();
+      setKvResult(data);
+    } catch (err) {
+      setKvResult({ success: false, error: 'Network error or node unreachable.' });
+    }
+    setIsExecuting(false);
+  };
 
   // Live clock updater
   useEffect(() => {
@@ -51,6 +118,27 @@ function App() {
       });
 
       setNodes(updatedNodes);
+      
+      // Update rolling chart data (keep the last 30 seconds)
+      setChartData(prev => {
+        const now = new Date();
+        const timeStr = `${now.getMinutes()}:${now.getSeconds().toString().padStart(2, '0')}`;
+        
+        // Simulating throughput and latency for the UI wireframe since we haven't 
+        // hooked up the prometheus metric aggregation to the /api/status endpoint yet.
+        const activeThroughput = updatedNodes.some(n => n.isOnline) ? Math.floor(Math.random() * 40) + 120 : 0;
+        const activeLatency = updatedNodes.some(n => n.isOnline) ? Math.floor(Math.random() * 15) + 30 : 0;
+
+        const newPoint = {
+          time: timeStr,
+          N1: updatedNodes[0]?.log_index || 0,
+          N2: updatedNodes[1]?.log_index || 0,
+          N3: updatedNodes[2]?.log_index || 0,
+          throughput: activeThroughput,
+          latency: activeLatency,
+        };
+        return [...prev.slice(-29), newPoint]; 
+      });
     };
 
     fetchClusterStatus();
@@ -167,7 +255,303 @@ function App() {
                 ))}
               </div>
             </div>
+{/* Key-Value Operations Section */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                <Database className="w-5 h-5 mr-2 text-blue-500" /> Key-Value Operations
+              </h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                {/* Left Column: Form */}
+                <div className="space-y-4">
+                  <div className="flex border border-slate-200 rounded-lg overflow-hidden font-medium text-sm">
+                    {['PUT', 'GET', 'DELETE'].map(op => (
+                      <button 
+                        key={op}
+                        onClick={() => setKvOp(op as any)}
+                        className={`flex-1 py-2 text-center transition-colors ${kvOp === op ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+                      >
+                        {op}
+                      </button>
+                    ))}
+                  </div>
 
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Key</label>
+                    <input 
+                      type="text" 
+                      placeholder="Enter key (e.g., user:1)" 
+                      value={kvKey}
+                      onChange={e => setKvKey(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {kvOp === 'PUT' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Value</label>
+                      <input 
+                        type="text" 
+                        placeholder='Enter value (e.g., {"name":"Kanishka"})' 
+                        value={kvValue}
+                        onChange={e => setKvValue(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+
+                  <button 
+                    onClick={handleExecuteKV}
+                    disabled={isExecuting || !kvKey || (kvOp === 'PUT' && !kvValue)}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isExecuting ? 'Executing...' : 'Execute'}
+                  </button>
+                </div>
+
+                {/* Right Column: Result Card */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col">
+                  <h3 className="text-sm font-semibold text-slate-600 mb-3 border-b border-slate-200 pb-2">Operation Result</h3>
+                  
+                  {!kvResult ? (
+                    <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+                      Execute an operation to see results
+                    </div>
+                  ) : kvResult.success ? (
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center text-green-600 font-bold mb-2">
+                        <CheckCircle className="w-5 h-5 mr-2" /> {kvResult.op} Successful
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <span className="text-slate-500">Key:</span>
+                        <span className="col-span-2 font-mono text-slate-800">{kvResult.key}</span>
+                        
+                        {kvResult.op === 'PUT' && (
+                          <>
+                            <span className="text-slate-500">Value:</span>
+                            <span className="col-span-2 font-mono text-slate-800 truncate">{kvResult.value}</span>
+                          </>
+                        )}
+                        
+                        <span className="text-slate-500">Node:</span>
+                        <span className="col-span-2 font-semibold text-blue-600">Leader ({kvResult.node.toUpperCase()})</span>
+                        
+                        <span className="text-slate-500">Log Index:</span>
+                        <span className="col-span-2 font-mono text-slate-800">{kvResult.log_index}</span>
+                        
+                        <span className="text-slate-500">Latency:</span>
+                        <span className="col-span-2 font-mono text-slate-800">{kvResult.latency_ms} ms</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 text-sm text-red-600">
+                      <div className="flex items-center font-bold mb-2">
+                        <AlertTriangle className="w-5 h-5 mr-2" /> Operation Failed
+                      </div>
+                      <p>{kvResult.error}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Live Charts Section */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              
+              {/* Log Replication Status */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                  <FileText className="w-5 h-5 mr-2 text-blue-500" /> Log Replication Status
+                </h2>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="time" tick={{fontSize: 12}} stroke="#94a3b8" />
+                      <YAxis tick={{fontSize: 12}} stroke="#94a3b8" domain={['dataMin - 1', 'dataMax + 1']} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                      <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                      <Line type="stepAfter" dataKey="N1" stroke="#3b82f6" strokeWidth={2} dot={false} name="Node 1" />
+                      <Line type="stepAfter" dataKey="N2" stroke="#22c55e" strokeWidth={2} dot={false} name="Node 2" />
+                      <Line type="stepAfter" dataKey="N3" stroke="#eab308" strokeWidth={2} dot={false} name="Node 3" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Performance Metrics */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                  <BarChart2 className="w-5 h-5 mr-2 text-blue-500" /> Performance Metrics (Live)
+                </h2>
+                <div className="h-64 flex flex-col space-y-4">
+                  
+                  {/* Throughput Sparkline */}
+                  <div className="flex-1 bg-slate-50 border border-slate-100 rounded-lg p-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Throughput</span>
+                      <span className="text-sm font-bold text-sky-600">{chartData.length > 0 ? chartData[chartData.length - 1].throughput : 0} Ops/sec</span>
+                    </div>
+                    <div className="h-20">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData}>
+                          <YAxis hide domain={['dataMin - 20', 'dataMax + 20']} />
+                          <Tooltip contentStyle={{ fontSize: '12px', borderRadius: '4px' }} />
+                          <Line type="monotone" dataKey="throughput" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Latency Sparkline */}
+                  <div className="flex-1 bg-slate-50 border border-slate-100 rounded-lg p-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">P95 Latency</span>
+                      <span className="text-sm font-bold text-violet-600">{chartData.length > 0 ? chartData[chartData.length - 1].latency : 0} ms</span>
+                    </div>
+                    <div className="h-20">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData}>
+                          <YAxis hide domain={['dataMin - 10', 'dataMax + 10']} />
+                          <Tooltip contentStyle={{ fontSize: '12px', borderRadius: '4px' }} />
+                          <Line type="monotone" dataKey="latency" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+            {/* ML & Fault Injection Section */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              
+              {/* ML Adaptation Panel */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                  <Settings className="w-5 h-5 mr-2 text-blue-500" /> ML Adaptation (XGBoost)
+                </h2>
+                
+                <div className="grid grid-cols-2 gap-6">
+                  {/* Left: Predicted Parameters */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 bg-slate-100 p-2 rounded">Current Parameters (Predicted)</h3>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">Batch Size</span>
+                        <span className="font-mono text-slate-800 font-bold">64</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">Pipeline Depth</span>
+                        <span className="font-mono text-slate-800 font-bold">4</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">Replication Mode</span>
+                        <span className="font-mono text-slate-800">Full Copy</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">Follower Set</span>
+                        <span className="font-mono text-slate-800">N1, N2, N3</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Live Features */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 bg-slate-100 p-2 rounded">Input Features (Live)</h3>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">Request Rate</span>
+                        <span className="font-mono text-slate-800">{chartData.length > 0 ? chartData[chartData.length - 1].throughput : 0} ops/sec</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">Avg. Latency</span>
+                        <span className="font-mono text-slate-800">{chartData.length > 0 ? chartData[chartData.length - 1].latency : 0} ms</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">Follower Lag</span>
+                        <span className="font-mono text-slate-800">0 entries</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-100 pb-1">
+                        <span className="text-slate-600 font-medium">CPU Usage</span>
+                        <span className="font-mono text-slate-800">45%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fault Injection Panel */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                  <Zap className="w-5 h-5 mr-2 text-blue-500" /> Fault Injection & Recovery
+                </h2>
+                
+                {/* Chaos Buttons */}
+                <div className="grid grid-cols-4 gap-2 mb-6">
+                  <button 
+                    onClick={() => handleInjectFault('crash', 'Node Crash', leaderNode ? leaderNode.node_id : 'node1')}
+                    disabled={isInjecting || !leaderNode}
+                    className="text-xs font-bold py-2 px-1 rounded bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors disabled:opacity-50"
+                  >
+                    Crash Leader
+                  </button>
+                  <button 
+                    onClick={() => handleInjectFault('partition', 'Network Partition', 'node3')}
+                    disabled={isInjecting || !onlineNodes}
+                    className="text-xs font-bold py-2 px-1 rounded bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 transition-colors disabled:opacity-50"
+                  >
+                    Partition N3
+                  </button>
+                  <button 
+                    disabled
+                    className="text-xs font-bold py-2 px-1 rounded bg-blue-50 text-blue-600 border border-blue-200 opacity-50 cursor-not-allowed"
+                  >
+                    Add Latency
+                  </button>
+                  <button 
+                    disabled
+                    className="text-xs font-bold py-2 px-1 rounded bg-purple-50 text-purple-600 border border-purple-200 opacity-50 cursor-not-allowed"
+                  >
+                    Packet Loss
+                  </button>
+                </div>
+
+                {/* Event Log Table */}
+                <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="px-3 py-2">Time</th>
+                        <th className="px-3 py-2">Event</th>
+                        <th className="px-3 py-2">Node</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {faultEvents.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-3 py-6 text-center text-slate-400 italic">No recent fault events</td>
+                        </tr>
+                      ) : (
+                        faultEvents.map((event, idx) => (
+                          <tr key={idx} className="bg-white">
+                            <td className="px-3 py-2 font-mono text-slate-500 whitespace-nowrap">{event.time}</td>
+                            <td className="px-3 py-2 font-medium text-slate-700">{event.event}</td>
+                            <td className="px-3 py-2 font-mono font-bold text-slate-800">{event.node}</td>
+                            <td className="px-3 py-2">
+                              <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-full">{event.status}</span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
           </div>
         </main>
       </div>
